@@ -1,0 +1,168 @@
+---
+title: "Tpcc samsung"
+author: "VadimTk"
+date: "Jul, 2016"
+--output: html_document
+output:
+  md_document:
+    variant: markdown_github
+
+---
+
+```{r setup, include=FALSE}
+library(svglite)
+library(extrafont)
+font_import()
+knitr::opts_chunk$set(echo = TRUE,dev="png", 
+               dev.args=list(type="cairo-png"),
+               dpi=300)
+library("RMySQL")
+library(stringr)
+library(ggplot2)
+library(ggthemes)
+library(reshape2)
+library(knitr)
+
+tm<-theme(legend.position="right",
+          strip.background = element_rect(colour="red", fill="#CCCCFF"),
+          text=element_text(family="Garamond",size=14))
+
+guides(colour = guide_legend(override.aes = list(size=4)))
+
+
+cons <- dbListConnections(MySQL())
+for(con in cons)
+    dbDisconnect(con)
+con <- dbConnect(MySQL(), user="sbtest", dbname="benchmarks", host="10.20.2.4")
+
+```
+
+# Percona Server/MySQL
+
+## Setup
+
+* Client (tpcc) and server are on the same server. 
+* CPU: 56 logical CPU threads servers Intel(R) Xeon(R) CPU E5-2683 v3 @ 2.00GHz
+* tpcc 1000 warehouses, 1 schema (about 100GB datasize)
+* OS: Ubuntu 16.04 (Xenial Xerus)
+* Kernel 4.4.0-28-generic
+* Storage devices
+  * Samsung SM863 SATA SSD, single device, with ext4 filesystem
+  * Samsung 850 PRO SATA SSD, single device, with ext4 filesystem
+  * Samsung PM 1725 NVMe SSD, single device
+
+# Results
+
+=============
+
+## cachesize vary
+
+We are varying buffer pool size from 5GB to 115GB. 
+With 5GB buffer pool size a very small partion of data fits into memory, this results in intesive foreground IO reads
+and intensive background IO writes.
+
+With 115GB almost all data fits into memory, this results in a very small (or almost zero) IO reads, and moderate background IO writes.
+
+All buffer pool sizes in the middle of interval results to corresponding IO reads and writes.
+
+The measurements are taken every 1 sec, so we can see variance in throughput and trends
+
+### Pagesize 16k
+
+The results for innodb_page_size=16k (default), 1 sec resolution
+```{r , echo=FALSE, fig.height=8, fig.width=10, warning=FALSE}
+
+title <- "tpcc-mysql 1000W samsung "
+p2 = dbGetQuery( con,'SELECT sec, tps, bp, storage 
+                 FROM tpcc_results sr 
+                 WHERE runsign like "tpcc_1000w_%_16k" and sec>1800
+                 ' )
+
+
+m <- ggplot(p2, aes(x=as.numeric(sec),y=as.numeric(tps),color=storage))
+
+m+geom_point()+expand_limits(y=0)+
+  labs(x="BP, GB",y="Throughput, tps",title=title)+tm+scale_color_tableau(name="Storage")+facet_wrap(~bp,labeller = label_both)
+
+```
+
+The average results in NOTPM
+```{r , echo=FALSE, fig.height=8, fig.width=10, warning=FALSE}
+
+title <- "tpcc-mysql 1000W samsung, 16k pagesize"
+p2 = dbGetQuery( con,'SELECT bp, storage, AVG(tps)*60 tps
+                 FROM tpcc_results sr 
+                 WHERE runsign like "tpcc_1000w_%_16k" and sec>1800
+                 GROUP BY bp,storage
+                 ' )
+
+
+m <- ggplot(p2, aes(x=bp,y=as.numeric(tps),color=storage))
+
+m+geom_point()+geom_line()+expand_limits(y=0)+
+  labs(x="BP, GB",y="Throughput, NOTPM",title=title)+tm+scale_color_tableau(name="Storage")+scale_y_continuous(labels = scales::comma)
+
+```
+
+#### Conclusion
+Samsung 850 is obviously is not able to keep with with more advanced SM863 and PM1725
+
+PM1725 shows a great benefit with small buffer pool sizes, while in case with big amount of memory, there is practically not difference with SM863.
+The reason is that with big buffer pool size MySQL does not push IO subsystem much to use all performance of PM1725
+
+### Pagesize 4k
+
+I also tested how innodb_page_size=4k affects the throughput
+
+```{r , echo=FALSE, fig.height=8, fig.width=10, warning=FALSE}
+
+title <- "tpcc-mysql 1000W samsung "
+p2 = dbGetQuery( con,'SELECT sec, tps, bp, storage 
+                 FROM tpcc_results sr 
+                 WHERE runsign like "tpcc_1000w_%_4k" and sec>1800
+                 ' )
+
+
+m <- ggplot(p2, aes(x=as.numeric(sec),y=as.numeric(tps),color=storage))
+
+m+geom_point()+expand_limits(y=0)+
+  labs(x="BP, GB",y="Throughput, tps",title=title)+tm+scale_color_tableau(name="Storage")+facet_wrap(~bp,labeller = label_both)
+
+
+```
+
+The average results in NOTPM
+```{r , echo=FALSE, fig.height=8, fig.width=10, warning=FALSE}
+
+title <- "tpcc-mysql 1000W samsung, 4k pagesize "
+p2 = dbGetQuery( con,'SELECT bp, storage, AVG(tps)*60 tps
+                 FROM tpcc_results sr 
+                 WHERE runsign like "tpcc_1000w_%_4k" and sec>1800
+                 GROUP BY bp,storage
+                 ' )
+
+
+m <- ggplot(p2, aes(x=bp,y=as.numeric(tps),color=storage))
+
+m+geom_point()+geom_line()+expand_limits(y=0)+
+  labs(x="BP, GB",y="Throughput, NOTPM",title=title)+tm+scale_color_tableau(name="Storage")+scale_y_continuous(labels = scales::comma)
+
+```
+
+### Summary
+There I show average throughput (in Transactions per Minute)
+```{r , echo=FALSE, fig.height=8, fig.width=10, warning=FALSE}
+
+title <- "tpcc-mysql 1000W samsung "
+p2avg = dbGetQuery( con,'SELECT  bp, storage,pagesize,avg(tps)*60 tps
+                 FROM tpcc_results sr 
+                 WHERE runsign like "tpcc_1000w_%" and sec>1800
+                 GROUP BY bp, storage,pagesize
+                 ' )
+
+m <- ggplot(p2avg, aes(x=as.factor(bp),y=as.numeric(tps),color=pagesize,group=pagesize))
+m+geom_point()+geom_line()+expand_limits(y=0)+
+  labs(x="BP, GB",y="Throughput, NOTPM",title=title)+tm+scale_color_tableau(name="pagesize")+facet_wrap(~storage,labeller = label_both)
+
+
+```
