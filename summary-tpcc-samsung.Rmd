@@ -37,7 +37,7 @@ con <- dbConnect(MySQL(), user="sbtest", dbname="benchmarks", host="10.20.2.4")
 
 ```
 
-# Percona Server/MySQL
+# Percona Server - TPCC-MySQL 
 
 ## Setup
 
@@ -101,6 +101,13 @@ m <- ggplot(p2, aes(x=bp,y=as.numeric(tps),color=storage))
 
 m+geom_point()+geom_line()+expand_limits(y=0)+
   labs(x="BP, GB",y="Throughput, NOTPM",title=title)+tm+scale_color_tableau(name="Storage")+scale_y_continuous(labels = scales::comma)
+
+t1<-dcast(p2,bp~storage,mean,value.var = "tps")
+t1$pm1725_to_sam863<-t1$pm1725/t1$sam863
+t1$pm1725_to_sam850<-t1$pm1725/t1$sam850
+
+
+kable(t1, digits=2)
 
 ```
 
