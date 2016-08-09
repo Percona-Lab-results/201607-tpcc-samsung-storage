@@ -171,5 +171,10 @@ m <- ggplot(p2avg, aes(x=as.factor(bp),y=as.numeric(tps),color=pagesize,group=pa
 m+geom_point()+geom_line()+expand_limits(y=0)+
   labs(x="BP, GB",y="Throughput, NOTPM",title=title)+tm+scale_color_tableau(name="pagesize")+facet_wrap(~storage,labeller = label_both)
 
+t1<-dcast(p2avg,bp~storage+pagesize,mean,value.var = "tps")
+t1$pm1725_4k_to_16k<-t1$pm1725_4k/t1$pm1725_16k
+
+kable(t1, digits=2)
+
 
 ```
